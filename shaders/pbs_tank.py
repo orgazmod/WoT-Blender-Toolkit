@@ -32,6 +32,10 @@ try:
 except Exception:
     bpy = None
 
+from ..common.blender_compat import (
+    material_output_node, principled_bsdf_node, socket_by_identifier,
+)
+
 
 # -----------------------------------------------------------------------------
 # Shader sabitleri: .visual_processed içindeki değerler
@@ -95,15 +99,7 @@ def _mat_get_any(mat, names, default):
 
 
 def _socket_by_names(sockets, names):
-    for name in names:
-        try:
-            return sockets[name]
-        except Exception:
-            pass
-    for s in sockets:
-        if s.name in names or getattr(s, "identifier", "") in names:
-            return s
-    return None
+    return socket_by_identifier(sockets, *names)
 
 
 def _out(node, *names):
@@ -417,8 +413,8 @@ def _add_detail_param_debug_nodes(nodes, detail_params, loc=(0, 0)):
 # Ana kurulum
 # -----------------------------------------------------------------------------
 def setup_nodes(mat, nodes, links):
-    out = nodes.get("Material Output")
-    bsdf = nodes.get("Principled BSDF")
+    out = material_output_node(nodes)
+    bsdf = principled_bsdf_node(nodes)
     if not out or not bsdf:
         return
 
@@ -530,10 +526,14 @@ def setup_nodes(mat, nodes, links):
         try:
             # Mapping node ile rotation/scale görsel olarak uygulanır.
             mapping = _new(nodes, "ShaderNodeMapping", CUSTOM_PREFIX + "DetailsMaps_Primary_Mapping", (-950, -640))
-            mapping.inputs["Scale"].default_value[0] = max(0.0001, primary["scale"])
-            mapping.inputs["Scale"].default_value[1] = max(0.0001, primary["scale"])
-            mapping.inputs["Scale"].default_value[2] = 1.0
-            mapping.inputs["Rotation"].default_value[2] = primary["angle"]
+            scale_in = _inp(mapping, "Scale")
+            rot_in = _inp(mapping, "Rotation")
+            if scale_in is not None:
+                scale_in.default_value[0] = max(0.0001, primary["scale"])
+                scale_in.default_value[1] = max(0.0001, primary["scale"])
+                scale_in.default_value[2] = 1.0
+            if rot_in is not None:
+                rot_in.default_value[2] = primary["angle"]
             _link(links, detail_uv, _inp(mapping, "Vector"))
             _link(links, _out(mapping, "Vector"), _inp(details_atlas, "Vector"))
         except Exception:
@@ -709,10 +709,14 @@ def setup_nodes(mat, nodes, links):
             if secondary.get("enabled", False) and t2da_second_blend > 0.001:
                 secondary_tex = _duplicate_image_texture(nodes, details_atlas, "DetailsMaps_Secondary_Sample", (-1040, -1030))
                 mapping2 = _new(nodes, "ShaderNodeMapping", CUSTOM_PREFIX + "DetailsMaps_Secondary_Mapping", (-1250, -1030))
-                mapping2.inputs["Scale"].default_value[0] = max(0.0001, secondary["scale"])
-                mapping2.inputs["Scale"].default_value[1] = max(0.0001, secondary["scale"])
-                mapping2.inputs["Scale"].default_value[2] = 1.0
-                mapping2.inputs["Rotation"].default_value[2] = secondary["angle"]
+                scale2_in = _inp(mapping2, "Scale")
+                rot2_in = _inp(mapping2, "Rotation")
+                if scale2_in is not None:
+                    scale2_in.default_value[0] = max(0.0001, secondary["scale"])
+                    scale2_in.default_value[1] = max(0.0001, secondary["scale"])
+                    scale2_in.default_value[2] = 1.0
+                if rot2_in is not None:
+                    rot2_in.default_value[2] = secondary["angle"]
                 _link(links, detail_uv, _inp(mapping2, "Vector"))
                 _link(links, _out(mapping2, "Vector"), _inp(secondary_tex, "Vector"))
                 sec_sep = _sep_color(nodes, links, _out(secondary_tex, "Color"),
@@ -868,7 +872,9 @@ def setup_nodes(mat, nodes, links):
             pass
         _link(links, _out(norm_color, "Color", "Image"), _inp(base_nm, "Color"))
         try:
-            base_nm.inputs["Strength"].default_value = 1.0
+            strength_in = _inp(base_nm, "Strength")
+            if strength_in is not None:
+                strength_in.default_value = 1.0
         except Exception:
             pass
         base_normal_socket = _out(base_nm, "Normal")

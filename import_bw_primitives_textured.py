@@ -14,6 +14,7 @@ from .common.consts import visual_property_descr_dict, VERBOSE_VALIDATE
 from .loaddatamesh import LoadDataMesh
 from .file_finder import WoTFileFinder 
 
+from .common.blender_compat import input_socket, output_socket
 logger = logging.getLogger(__name__)
 
 # --- UTILS ---
@@ -241,7 +242,7 @@ def process_material_textures(mat, props_xml, base_path, finder, context, has_ve
         
         bsdf = nodes.new('ShaderNodeBsdfPrincipled')
         bsdf.location = (0, 0)
-        links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+        links.new(output_socket(bsdf, 'BSDF', index=0), input_socket(out, 'Surface', index=0))
         
         tex_files = {} 
         extra_props = {}
@@ -420,9 +421,9 @@ def process_material_textures(mat, props_xml, base_path, finder, context, has_ve
             xyz = nodes.new('ShaderNodeCombineXYZ')
             xyz.name = f"{p_name}.xyz"
             xyz.label = f"{p_name}.xyz"
-            xyz.inputs['X'].default_value = vals[0]
-            xyz.inputs['Y'].default_value = vals[1]
-            xyz.inputs['Z'].default_value = vals[2]
+            input_socket(xyz, 'X', index=0).default_value = vals[0]
+            input_socket(xyz, 'Y', index=1).default_value = vals[1]
+            input_socket(xyz, 'Z', index=2).default_value = vals[2]
             _set_node_color(xyz, (0.14, 0.62, 0.36))
             _put_in_frame(xyz, frame_vec4, (40, rel_y))
 
@@ -487,7 +488,7 @@ def process_material_textures(mat, props_xml, base_path, finder, context, has_ve
                 else:
                     # pbs_tank bile yüklenemezse en son çare olarak sadece diffuse bağla
                     diff = nodes.get("diffuseMap")
-                    if diff: links.new(diff.outputs['Color'], bsdf.inputs['Base Color'])
+                    if diff: links.new(output_socket(diff, 'Color', index=0), input_socket(bsdf, 'Base Color', index=0))
                 
         except Exception as shader_err:
             write_to_blender_text(f"[Shader Registry Error] {fx_name} için hata: {shader_err}")

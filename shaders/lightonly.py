@@ -1,10 +1,23 @@
 # -*- coding: utf-8 -*-
 
+
+from ..common.blender_compat import material_output_node, principled_bsdf_node, socket_by_identifier
 CUSTOM_PREFIX = "LightOnly__"
 
 
 def _node(nodes, *names):
     wanted = [str(n) for n in names if n]
+
+    # Blender default node display names are localized; use stable node type.
+    wanted_cf = {n.casefold() for n in wanted}
+    if "material output" in wanted_cf:
+        nd = material_output_node(nodes)
+        if nd is not None:
+            return nd
+    if "principled bsdf" in wanted_cf:
+        nd = principled_bsdf_node(nodes)
+        if nd is not None:
+            return nd
     for n in wanted:
         nd = nodes.get(n)
         if nd:
@@ -20,18 +33,7 @@ def _node(nodes, *names):
 
 
 def _sock(sockets, *names):
-    for name in names:
-        if not name:
-            continue
-        try:
-            return sockets[name]
-        except Exception:
-            pass
-    for s in sockets:
-        sid = getattr(s, "identifier", "")
-        if s.name in names or sid in names:
-            return s
-    return None
+    return socket_by_identifier(sockets, *names)
 
 
 def _out(node, *names):
@@ -241,7 +243,9 @@ def setup_nodes(mat, nodes, links):
             # kamera tam karşıdayken güçlüdür; ramp daha çok renk/yoğunluk gradyanı gibi çalışır.
             cam_weight = _new(nodes, 'ShaderNodeLayerWeight', 'Additive_Rays_FrontFacing_Alpha', (-470, -520))
             try:
-                cam_weight.inputs['Blend'].default_value = 0.35
+                blend_in = _inp(cam_weight, 'Blend')
+                if blend_in is not None:
+                    blend_in.default_value = 0.35
             except Exception:
                 pass
             front_inv = _new(nodes, 'ShaderNodeMath', 'Additive_Rays_1_minus_Facing', (-260, -520))
@@ -333,6 +337,8 @@ def setup_nodes(mat, nodes, links):
         # Additive olmayan lightonly varyantlarında da lightMultipliers emission'a gider.
         if l_mult and final_color:
             strength = _x_socket(nodes, links, l_mult, 'lightMultipliers_X_BSDF', (-210, 310))
-            if 'Emission Color' in bsdf.inputs:
-                _link(links, final_color, _inp(bsdf, 'Emission Color'))
-                _link(links, strength, _inp(bsdf, 'Emission Strength'))
+            emission_color = _inp(bsdf, 'Emission Color', 'Emission')
+            emission_strength = _inp(bsdf, 'Emission Strength')
+            if emission_color is not None:
+                _link(links, final_color, emission_color)
+                _link(links, strength, emission_strength)

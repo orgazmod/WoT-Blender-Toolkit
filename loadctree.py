@@ -14,6 +14,7 @@ from .TreesReader import TreesReader
 from .common.consts import VERBOSE_VALIDATE
 
 
+from .common.blender_compat import input_socket, output_socket
 logger = logging.getLogger(__name__)
 
 
@@ -64,8 +65,8 @@ def ctree_load(col: bpy.types.Collection, filepath: Path):
         out_node = node_tree.nodes.new('ShaderNodeOutputMaterial')
 
         shader_node = node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-        shader_node.inputs['Roughness'].default_value = 1.0
-        node_tree.links.new(shader_node.outputs['BSDF'], out_node.inputs['Surface'])
+        input_socket(shader_node, 'Roughness').default_value = 1.0
+        node_tree.links.new(output_socket(shader_node, 'BSDF', index=0), input_socket(out_node, 'Surface', index=0))
 
         diffuseMap = filepath.parent / obj.diffMap.name
         normalMap = filepath.parent / obj.normMap.name
@@ -73,8 +74,8 @@ def ctree_load(col: bpy.types.Collection, filepath: Path):
         if diffuseMap.is_file():
             tex_node = node_tree.nodes.new('ShaderNodeTexImage')
             tex_node.image = load_image(str(diffuseMap), check_existing=True)
-            node_tree.links.new(tex_node.outputs['Color'], shader_node.inputs['Base Color'])
-            node_tree.links.new(tex_node.outputs['Alpha'], shader_node.inputs['Alpha'])
+            node_tree.links.new(output_socket(tex_node, 'Color', index=0), input_socket(shader_node, 'Base Color', index=0))
+            node_tree.links.new(output_socket(tex_node, 'Alpha', index=1), input_socket(shader_node, 'Alpha'))
 
         if normalMap.is_file():
             # TODO:

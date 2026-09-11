@@ -18,6 +18,7 @@ from .common import utils_AsVector
 from .common.consts import visual_property_descr_dict, VERBOSE_VALIDATE
 from .loaddatamesh import LoadDataMesh
 
+from .common.blender_compat import input_socket, output_socket
 logger = logging.getLogger(__name__)
 
 def write_to_blender_text(content, clear=False):
@@ -128,7 +129,7 @@ def find_and_assign_texture(mat, prop_name, base_path, is_data=False):
                 nodes.clear()
                 bsdf = nodes.new('ShaderNodeBsdfPrincipled')
                 out = nodes.new('ShaderNodeOutputMaterial')
-                links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+                links.new(output_socket(bsdf, 'BSDF', index=0), input_socket(out, 'Surface', index=0))
 
             # Texture Node
             tex_node = nodes.new('ShaderNodeTexImage')
@@ -136,15 +137,15 @@ def find_and_assign_texture(mat, prop_name, base_path, is_data=False):
             
             if prop_name == "diffuseMap":
                 tex_node.location = (-300, 200)
-                links.new(tex_node.outputs['Color'], bsdf.inputs['Base Color'])
+                links.new(output_socket(tex_node, 'Color', index=0), input_socket(bsdf, 'Base Color', index=0))
                 if image.alpha_mode != 'NONE':
-                    links.new(tex_node.outputs['Alpha'], bsdf.inputs['Alpha'])
+                    links.new(output_socket(tex_node, 'Alpha', index=1), input_socket(bsdf, 'Alpha'))
             elif prop_name == "normalMap":
                 tex_node.location = (-300, -100)
                 norm_node = nodes.new('ShaderNodeNormalMap')
                 norm_node.location = (-150, -100)
-                links.new(tex_node.outputs['Color'], norm_node.inputs['Color'])
-                links.new(norm_node.outputs['Normal'], bsdf.inputs['Normal'])
+                links.new(output_socket(tex_node, 'Color', index=0), input_socket(norm_node, 'Color', index=1))
+                links.new(output_socket(norm_node, 'Normal', index=0), input_socket(bsdf, 'Normal'))
 
         except Exception as e:
             logger.error(f"Error loading texture: {e}")
@@ -320,7 +321,7 @@ def load_bw_primitive_from_file(col: bpy.types.Collection, model_filepath: Path,
                     attr_node.attribute_name = "BPVScolour"
                     attr_node.location = (-400, 200)
                     
-                    links.new(attr_node.outputs['Alpha'], bsdf.inputs['Alpha'])
+                    links.new(output_socket(attr_node, 'Alpha'), input_socket(bsdf, 'Alpha'))
                     material.blend_method = 'BLEND'
                     material.show_transparent_back = True
 

@@ -34,6 +34,7 @@ from mathutils import Vector, Matrix
 try:
     from .common.consts import visual_property_descr_dict
     from .common.XmlUnpacker import XmlUnpacker
+    from .common.blender_compat import keymap_by_space_type
     from .export_bw_primitives import BigWorldModelExporter
     from .export_bw_primitives_processed import BigWorldModelExporterProcessed
     from .export_bw_primitives_skinned import BigWorldModelExporterSkinned
@@ -497,7 +498,7 @@ class WoT_AddonPreferences(bpy.types.AddonPreferences):
         wm = context.window_manager
         kc = wm.keyconfigs.user
         if kc:
-            km = kc.keymaps.get('3D View')
+            km = keymap_by_space_type(kc.keymaps, 'VIEW_3D', '3D View')
             if km:
                 import rna_keymap_ui
                 layout.context_pointer_set("keymap", km)
@@ -538,7 +539,7 @@ class PREFERENCES_OT_wot_restore_keymap(bpy.types.Operator):
         kc = wm.keyconfigs.user
         if not kc: return {'CANCELLED'}
             
-        km = kc.keymaps.get('3D View')
+        km = keymap_by_space_type(kc.keymaps, 'VIEW_3D', '3D View')
         if not km:
             km = kc.keymaps.new(name='3D View', space_type='VIEW_3D')
             

@@ -3,6 +3,7 @@ import subprocess
 from struct import pack
 from xml.dom.minidom import getDOMImplementation
 from .exportdatamesh import ExportDataMesh 
+from .common.blender_compat import input_socket
 import bpy
 import math
 from mathutils import Vector, Matrix, Euler
@@ -449,9 +450,9 @@ def _read_split_vector4_nodes(mat, prop_name):
 
     if xyz_node:
         try:
-            vals[0] = float(xyz_node.inputs["X"].default_value)
-            vals[1] = float(xyz_node.inputs["Y"].default_value)
-            vals[2] = float(xyz_node.inputs["Z"].default_value)
+            vals[0] = float(input_socket(xyz_node, "X", index=0).default_value)
+            vals[1] = float(input_socket(xyz_node, "Y", index=1).default_value)
+            vals[2] = float(input_socket(xyz_node, "Z", index=2).default_value)
         except Exception:
             # Fallback: bazı node tiplerinde Vector output default_value olabilir.
             try:
