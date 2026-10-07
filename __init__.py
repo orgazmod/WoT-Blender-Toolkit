@@ -610,6 +610,8 @@ class VIEW3D_PT_wot_import_panel(bpy.types.Panel):
         box.label(text="Model State & Skin:")
         box.row().prop(scn, "wot_model_state", expand=True)
         box.prop(scn, "wot_selected_skin", text="Skin")
+        box.prop(scn, "wot_load_collision", text="Load Collision")
+        box.prop(scn, "wot_only_collision", text="Only Collision (no mesh)")
         
         box.label(text="Available LODs:")
         box.row().prop(scn, "wot_selected_lod", expand=True)
@@ -674,6 +676,16 @@ def get_bone_matrix_world(armature_obj, bone_name_substring):
             return armature_obj.matrix_world @ bone.matrix
     return None
 
+def get_collision_path(visual_path):
+    """Преобразует путь к визуальной модели в путь к коллизионной."""
+    if not visual_path:
+        return None
+    base = visual_path.replace("normal/lod0", "collision_client")
+    base = base.replace("crash/lod0", "collision_client")
+    base = base.replace(".visual_processed", ".primitives_processed")
+    base = base.replace(".visual", ".primitives")
+    return base
+
 def import_and_get_root(col, internal_path, finder, context):
     """Lojistik Merkezi üzerinden modeli bulur ve yükler."""
     found_path = finder.find(target_file=internal_path, base_dir="", internal_path=internal_path, context_pkg=context.get('last_pkg'))
@@ -731,6 +743,7 @@ class Import_WoT_Dummy_Load(bpy.types.Operator):
             tank_master["bw_export_base_path"] = f"vehicles/{pkg_nation}/{tank_id}/{state_folder}/"
         else:
             tank_master["bw_export_base_path"] = f"vehicles/{pkg_nation}/{tank_id}/_skins/{skin}/{state_folder}/"
+        tmp_visuals_to_delete = []
         # Path Resolver Helper
         def get_model_path(part_models_dict):
             if not part_models_dict: return None
@@ -746,12 +759,36 @@ class Import_WoT_Dummy_Load(bpy.types.Operator):
                 base_path = base_path.replace("lod0", selected_lod)
             return base_path
 
-        wm = context.window_manager
-        wm.progress_begin(0, 100)
-        
-        def load_part(int_path, part_name, parent_obj, align_target_obj=None, align_bone=None):
+        def load_collision_part(int_path, part_name, parent_obj):
+            if not int_path:
+                return None
+            found_path = finder.find(target_file=int_path, base_dir="",
+                                     internal_path=int_path, context_pkg=import_ctx.get('last_pkg'))
+            if not found_path:
+                print(f"[Collision] Not found: {int_path}")
+                return None
+            old_objs = set(col.objects)
+            try:
+                load_bw_primitive_textured(col, Path(found_path), import_empty=False, finder=finder, context=import_ctx)
+            except Exception as e:
+                print(f"[Collision Import Error] {part_name}: {e}")
+                return None
+            new_objs = set(col.objects) - old_objs
+            for obj in new_objs:
+                if obj.type == 'MESH':
+                    obj["wot_part"] = part_name + "_collision"
+                    obj.name = part_name + "_collision"
+                    obj.parent = parent_obj
+                    return obj
+            return None
+
+        def load_part(int_path, part_name, parent_obj, align_target_obj=None, align_bone=None, load_collision=True):
             if not int_path: return None
             
+            obj = None
+            tmp_visual = None
+            
+            # Загружаем визуал (или как финальный, или как временный для выравнивания)
             obj = import_and_get_root(col, int_path, finder, import_ctx)
             if obj:
                 obj["wot_part"] = part_name
@@ -762,11 +799,31 @@ class Import_WoT_Dummy_Load(bpy.types.Operator):
                     context.view_layer.update()
                     target_mtx = get_bone_matrix_world(align_target_obj, align_bone)
                     if target_mtx: obj.matrix_world = target_mtx.copy()
+                
+                # Если режим "только коллизия" — запоминаем для отложенного удаления
+                if scn.wot_only_collision:
+                    tmp_visuals_to_delete.append(obj)
+            
+            # Загружаем коллизию
+            if load_collision and scn.wot_load_collision:
+                col_path = get_collision_path(int_path)
+                if col_path:
+                    col_obj = load_collision_part(col_path, part_name, parent_obj)
+                    if col_obj:
+                        context.view_layer.update()
+                        if obj:
+                            col_obj.matrix_world = obj.matrix_world.copy()
+                        print(f"[Collision] OK: {part_name}")
+            
+            # Возвращаем либо визуал (если был), либо коллизию (если визуал удалили)
             return obj
 
         ch_idx = int(scn.wot_chassis_index) if scn.wot_chassis_index.isdigit() else 0
         tur_idx = int(scn.wot_turret_index) if scn.wot_turret_index.isdigit() else 0
         gun_idx = int(scn.wot_gun_index) if scn.wot_gun_index.isdigit() else 0
+
+        wm = context.window_manager
+        wm.progress_begin(0, 100)
 
         wm.progress_update(20)
         chassis_list = tank_xml_cache.get("chassis", [])
@@ -793,6 +850,25 @@ class Import_WoT_Dummy_Load(bpy.types.Operator):
 
         wm.progress_update(100)
         wm.progress_end()
+        
+        # Удаляем временные визуалы (рекурсивно, вместе с детьми)
+        if scn.wot_only_collision and tmp_visuals_to_delete:
+            def _delete_recursive(obj):
+                for child in list(obj.children):
+                    _delete_recursive(child)
+                try:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                except Exception as e:
+                    print(f"[Cleanup] Ошибка удаления {obj.name}: {e}")
+            
+            deleted = 0
+            for vis in tmp_visuals_to_delete:
+                # Защита: не удаляем коллизии
+                if vis.name.endswith("_collision"):
+                    continue
+                _delete_recursive(vis)
+                deleted += 1
+            print(f"[Cleanup] Удалено визуалов и их детей: {deleted}")
         
         self.report({'INFO'}, f"{tank_id} successfully loaded!")
         return {'FINISHED'}
@@ -1677,6 +1753,26 @@ def register():
     bpy.types.Scene.wot_model_state = bpy.props.EnumProperty(
         items=[("NORMAL", "Normal Model", ""), ("CRASHED", "Crashed Model", "")]
     )
+    def _update_load_collision(self, context):
+        # Если снимаем Load Collision — снимаем и Only Collision
+        if not self.wot_load_collision:
+            self.wot_only_collision = False
+
+    bpy.types.Scene.wot_load_collision = bpy.props.BoolProperty(
+        name="Load Collision", default=True,
+        description="Load collision model along with visual model",
+        update=_update_load_collision
+    )
+    def _update_only_collision(self, context):
+        # Если ставим Only Collision — автоматически ставим Load Collision
+        if self.wot_only_collision:
+            self.wot_load_collision = True
+
+    bpy.types.Scene.wot_only_collision = bpy.props.BoolProperty(
+        name="Only Collision", default=False,
+        description="Load only collision mesh, skip visual model",
+        update=_update_only_collision
+    )
     bpy.types.Scene.wot_selected_skin = bpy.props.EnumProperty(
         items=get_dynamic_skins, update=update_tank_parts
     )
@@ -1756,6 +1852,8 @@ def unregister():
     del bpy.types.Scene.wot_export_has_parent
     del bpy.types.Scene.wot_export_extent
     del bpy.types.Scene.wot_mem_target_file
+    del bpy.types.Scene.wot_load_collision
+    del bpy.types.Scene.wot_only_collision
     del bpy.types.Scene.wot_chassis_index
     del bpy.types.Scene.wot_turret_index
     del bpy.types.Scene.wot_gun_index
